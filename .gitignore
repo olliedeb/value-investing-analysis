@@ -1,0 +1,32 @@
+# --- Credentials & local config (never commit) ---
+info.env
+.env
+.env.local
+
+# --- Downloaded / generated data ---
+sec_cache/
+company_tickers.json
+portfolio/data/
+portfolio/backtest_results.json
+portfolio/portfolio_latest.json
+frontend/review_notes.json
+frontend/ranking_modes.json
+
+# --- Agentic review (excluded from this repo) ---
+Agent_Wardrobe/
+
+# --- Old manual snapshots ---
+version control/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- macOS / editors ---
+.DS_Store
+.vscode/
+.idea/

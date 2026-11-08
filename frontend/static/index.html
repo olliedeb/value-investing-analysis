@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fdfdfb">
+<title>Valuproj — Value Pipeline Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2314684a'/%3E%3Ctext x='32' y='45' font-family='Georgia,serif' font-size='36' font-weight='bold' fill='%23fdfdfb' text-anchor='middle'%3EV%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+<header>
+  <div>
+    <h1>Valuproj</h1>
+    <p class="sub">Value-investing pipeline — ranked shortlist, metrics, flags &amp; qualitative scores. Research tool, not financial advice.</p>
+  </div>
+  <div class="header-actions">
+    <span id="generatedAt" class="muted"></span>
+    <button id="refreshBtn" type="button">Refresh</button>
+    <button id="exportBtn" type="button">Export CSV</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Dashboard sections">
+  <button id="tabBtnShortlist" type="button" role="tab" aria-selected="true" aria-controls="tab-shortlist" class="active">Shortlist</button>
+  <button id="tabBtnBacktest" type="button" role="tab" aria-selected="false" aria-controls="tab-backtest">Backtest</button>
+</nav>
+
+<main id="main">
+<div id="tab-shortlist" role="tabpanel" aria-labelledby="tabBtnShortlist">
+<div id="banner" class="banner hidden"></div>
+
+<section class="panel" id="pipeline">
+  <h2>Pipeline</h2>
+  <p class="muted">Run the real pipeline scripts from here — same code as running them in VS Code. One run at a time; while it runs, the table below refreshes live from the database as tickers finish.</p>
+  <div class="run-controls">
+    <label>Stage 2 — evaluate queued tickers
+      <select id="stage2Limit" aria-label="How many tickers to evaluate">
+        <option value="10">10 tickers</option>
+        <option value="25" selected>25 tickers</option>
+        <option value="50">50 tickers</option>
+        <option value="100">100 tickers</option>
+        <option value="0">All queued</option>
+      </select>
+    </label>
+    <button id="runStage2Btn" type="button" class="primary">Run Stage 2</button>
+    <button id="runRankBtn" type="button">Recompute rankings only</button>
+    <label>Stage 1 — screen Yahoo
+      <select id="stage1Requeue" aria-label="Stage 1 requeue option">
+        <option value="none" selected>Add new only</option>
+        <option value="failed">Retry failed</option>
+        <option value="all">Re-evaluate all</option>
+      </select>
+    </label>
+    <button id="runStage1Btn" type="button">Run Stage 1</button>
+    <button id="stopRunBtn" type="button" class="hidden">Stop run</button>
+    <label class="check"><input id="liveToggle" type="checkbox" checked> Live updates while running</label>
+  </div>
+  <p id="runStatus" class="run-status">Idle — nothing running.</p>
+  <pre id="runLog" class="run-log hidden"></pre>
+</section>
+
+<section id="overview" class="cards" aria-label="Overview figures"></section>
+
+<section class="panel">
+  <h2>Flagged for review <span id="reviewCount" class="muted"></span></h2>
+  <p class="muted">Notes you added when something looked wrong. They live only on this machine, in <code>frontend/review_notes.json</code>.</p>
+  <div id="reviewList"><p class="muted">Nothing flagged yet.</p></div>
+</section>
+
+<section class="panel">
+  <h2>Ranked shortlist</h2>
+  <p class="muted">Each metric's switch below controls both how it is <b>ranked</b> and how its <b>column is shown</b>: switch on for its peer z-score, off for its absolute value. A z-score's sign: positive means <b>better than peers</b> — cheaper for P/E, P/B and debt/equity, higher for ROE. Measured against the ticker's <b>industry</b> when at least 5 industry peers have that metric, otherwise its <b>sector</b>, otherwise all stocks. Hover a z-score to see the raw value, peer mean and group size. P/DCF and reinvestment efficiency always show absolute values — only the absolute number matters for those.</p>
+  <div class="ranking-controls" id="rankingControls"></div>
+  <p class="muted">Flip a switch and the Rank and Score columns recompute right away, and that metric's column switches between z-scores and raw values with it. P/DCF and reinvestment efficiency are absolute only, since only the absolute number matters for those. Stage 2's stored rank is shown in each row's detail view for comparison.</p>
+  <div class="filters">
+    <input id="searchInput" type="search" placeholder="Search ticker…" aria-label="Search ticker">
+    <select id="sectorFilter" aria-label="Filter by sector"><option value="">All sectors</option></select>
+    <select id="statusFilter" aria-label="Filter by status">
+      <option value="">All statuses</option>
+      <option value="ranked">Ranked only</option>
+      <option value="success">success</option>
+      <option value="partial">partial</option>
+      <option value="failed">failed</option>
+      <option value="queued">queued</option>
+    </select>
+    <select id="flagFilter" aria-label="Filter by flag"><option value="">All flags</option></select>
+    <label class="check"><input id="hasFlagsOnly" type="checkbox"> Has flags</label>
+    <label class="check"><input id="staleOnly" type="checkbox"> Stale (&gt;45d)</label>
+    <label class="check"><input id="reviewOnly" type="checkbox"> Flagged by me</label>
+  </div>
+  <div id="flagChips" class="chips"></div>
+  <p id="resultCount" class="muted"></p>
+  <div class="table-wrap">
+    <table id="stocksTable">
+      <thead>
+        <tr>
+          <th data-sort="overall_rank">Rank</th>
+          <th data-sort="ticker">Ticker</th>
+          <th data-sort="sector">Sector</th>
+          <th data-sort="composite_score">Score</th>
+          <th data-sort="peer_z_avg">Peer z</th>
+          <th data-sort="pe_ratio">P/E</th>
+          <th data-sort="pb_ratio">P/B</th>
+          <th data-sort="p_dcf">P/DCF</th>
+          <th data-sort="debt_to_equity">D/E</th>
+          <th data-sort="reinvestment_efficiency">Reinv. eff.</th>
+          <th data-sort="roe">ROE</th>
+          <th data-sort="metrics_present">Metrics</th>
+          <th data-sort="date">As of</th>
+          <th>Flags</th>
+          <th>Qual.</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="stocksBody"></tbody>
+    </table>
+  </div>
+</section>
+
+</div>
+
+<div id="tab-backtest" role="tabpanel" aria-labelledby="tabBtnBacktest" hidden>
+<section class="panel" id="portfolioPanel">
+  <h2>Portfolio — top 10</h2>
+  <p class="muted">The implementable version of the strategy: the top 10 ranked stocks, weighted by their scores (weight ∝ 1 − composite score, so the best-ranked get the most capital). Built from the pipeline's stored ranking, fresh rows only. The portfolio score is the weight-weighted average composite score.</p>
+  <div class="run-controls">
+    <label>Weighting
+      <select id="pfWeighting" aria-label="Portfolio weighting">
+        <option value="score" selected>Score-weighted</option>
+        <option value="equal">Equal weight</option>
+        <option value="rank">Rank-weighted</option>
+      </select>
+    </label>
+    <button id="pfRebuildBtn" type="button">Rebuild portfolio</button>
+  </div>
+  <p id="pfSummary" class="run-status">Loading portfolio…</p>
+  <div class="table-wrap">
+    <table id="pfTable">
+      <thead>
+        <tr>
+          <th>Rank</th><th>Ticker</th><th>Sector</th><th>Score</th><th>Weight</th>
+          <th>P/E</th><th>P/B</th><th>P/DCF</th><th>D/E</th><th>Reinv. eff.</th><th>ROE</th>
+        </tr>
+      </thead>
+      <tbody id="pfBody"></tbody>
+    </table>
+  </div>
+  <h3>History — rebuild the past</h3>
+  <p class="muted">Reconstructs the ranking as it stood on each past rebalance date, from the 10-K filings that were public by then and the price on the day — then saves those rankings as snapshots so the backtest can run over years, not just since today. It is resumable: stop it any time and it picks up where it left off. First run takes a while (it downloads years of prices for ~600 tickers); re-runs are fast because everything is cached. Snapshot frequency is your choice: quarterly is the default, and a longer interval (yearly, every 5 years) is much faster since there are fewer dates to rebuild — just keep it at least as frequent as the holding period you plan to test, because the backtest reuses the latest snapshot on each rebalance date. See <code>portfolio/README.md</code> for the method and its limits (survivorship, annual EPS for P/E).</p>
+  <p id="snapshotCoverage" class="muted"></p>
+  <div class="run-controls">
+    <label>From year
+      <select id="bfStartYear" aria-label="Backfill start year">
+        <option value="2024">2024</option>
+        <option value="2022">2022</option>
+        <option value="2020">2020</option>
+        <option value="2018">2018</option>
+        <option value="2016" selected>2016</option>
+      </select>
+    </label>
+    <label>Rebalance
+      <select id="bfRebalance" aria-label="Backfill rebalance frequency">
+        <option value="quarterly" selected>Quarterly</option>
+        <option value="monthly">Monthly</option>
+        <option value="annual">Yearly</option>
+        <option value="2-year">Every 2 years</option>
+        <option value="3-year">Every 3 years</option>
+        <option value="5-year">Every 5 years</option>
+      </select>
+    </label>
+    <label class="check"><input id="bfForce" type="checkbox"> Redo everything</label>
+    <button id="bfRunBtn" type="button" class="primary">Run backfill</button>
+  </div>
+  <p id="bfStatus" class="run-status">No backfill run yet.</p>
+  <pre id="bfLog" class="run-log hidden"></pre>
+  <h3>Simulate returns</h3>
+  <p class="muted">Pick a period and how long each position is held — 1 month, 3 months, 1 year, 2 years, 3 years, 5 years, or buy and hold — then simulate. On each rebalance date it buys the top-ranked stocks <b>from the ranking as it stood on that date</b> — never today's ranking replayed over the past (that would be trading on information that didn't exist yet). The rebalance history below shows exactly what was held at each rebalance, and which snapshot it came from. It uses the weighting from the portfolio above. It needs at least two snapshot dates — if there isn't enough history yet, it will say so instead of inventing a past it never saw. Prices are cached under <code>portfolio/data/prices/</code>.</p>
+  <div class="run-controls">
+    <span class="field-group">
+      <span class="field-label">Time period</span>
+      <span class="presets" id="btPresets">
+        <button type="button" data-years="1">1Y</button>
+        <button type="button" data-years="3">3Y</button>
+        <button type="button" data-years="5" class="active">5Y</button>
+        <button type="button" data-years="10">10Y</button>
+        <button type="button" data-years="0">All</button>
+      </span>
+    </span>
+    <label>From <input id="btStart" type="date" aria-label="Backtest start date"></label>
+    <label>To <input id="btEnd" type="date" aria-label="Backtest end date"></label>
+  </div>
+  <div class="run-controls">
+    <label>Holding period
+      <select id="btRebalance" aria-label="How long each position is held">
+        <option value="monthly" selected>1 month</option>
+        <option value="quarterly">3 months</option>
+        <option value="annual">1 year</option>
+        <option value="2-year">2 years</option>
+        <option value="3-year">3 years</option>
+        <option value="5-year">5 years</option>
+        <option value="buy-and-hold">Buy and hold</option>
+      </select>
+    </label>
+    <label>Top stocks
+      <select id="btTopN" aria-label="How many top-ranked stocks to hold">
+        <option value="5">5</option>
+        <option value="10" selected>10</option>
+        <option value="15">15</option>
+        <option value="20">20</option>
+        <option value="25">25</option>
+      </select>
+    </label>
+    <label>Trading cost (bps)
+      <input id="btCost" type="number" value="10" min="0" max="1000" step="1" aria-label="Backtest cost in basis points">
+    </label>
+    <button id="btRunBtn" type="button" class="primary">Simulate returns</button>
+  </div>
+  <h3>Results</h3>
+  <p id="btStatus" class="run-status">No backtest run yet.</p>
+  <pre id="btLog" class="run-log hidden"></pre>
+  <div id="btStats" class="cards"></div>
+  <h4>Growth of $100</h4>
+  <p class="muted chart-note">Both lines start at 100 on the first day, so you can compare the strategy directly against the S&amp;P 500 over the same period.</p>
+  <canvas id="equityChart" class="hidden" width="900" height="320"></canvas>
+  <p id="equityLegend" class="muted chart-legend hidden"><span class="dot dot-green"></span> Portfolio &nbsp; <span class="dot dot-grey"></span> S&amp;P 500 (buy and hold)</p>
+  <h4>Drawdown</h4>
+  <p class="muted chart-note">How far the portfolio fell from its previous peak, over time. The deeper the dip, the rougher the ride.</p>
+  <canvas id="ddChart" class="hidden" width="900" height="220"></canvas>
+  <div id="btRebalances"></div>
+  <div id="btAnalysis"></div>
+  <div id="btMonthly"></div>
+  <div id="btDrawdowns"></div>
+  <p id="btWarnings" class="muted"></p>
+</section>
+</div>
+
+<section id="detail" class="panel hidden">
+  <div class="detail-head">
+    <h2 id="detailTitle">—</h2>
+    <button id="detailClose" type="button">Close</button>
+  </div>
+  <div id="detailBody"></div>
+  <h3>Add a review note</h3>
+  <p class="muted">Use this when a number looks wrong, a flag needs checking, or the DCF inputs look off. It does not change the pipeline data.</p>
+  <form id="noteForm" class="note-form">
+    <select id="noteSeverity" aria-label="Severity">
+      <option value="looks_wrong">Looks wrong</option>
+      <option value="check_later">Check later</option>
+      <option value="confirmed_ok">Confirmed OK</option>
+    </select>
+    <select id="noteMetric" aria-label="Metric concerned"><option value="">Whole row</option></select>
+    <input id="noteText" type="text" placeholder="What looks wrong, and why?" required maxlength="500">
+    <button type="submit">Save note</button>
+  </form>
+  <div id="detailNotes"></div>
+</section>
+</main>
+
+<footer class="muted">
+  <p>Quantitative data: MySQL <code>queue</code> + <code>stock_stats</code> (Stage 1 + Stage 2). Qualitative scores: <code>Agent_Wardrobe/qualitative_agent.db</code> (Stage 3). DCF: 9% discount, 2.5% terminal growth, 5-year horizon. A ticker needs ≥4 of 6 metrics to be ranked; rows older than 45 days are ignored for ranking.</p>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
